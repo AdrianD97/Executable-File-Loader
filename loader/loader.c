@@ -8,6 +8,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
+#include <sys/mman.h>
 #include <math.h> /* va trebui sa leg la compilare biblioteca -lm */
 
 /* TODO: Sa nu uit sa verific fisierele .h(loader.h, exec_parser.h) cu cele din repo-ul temei*/
@@ -99,7 +101,7 @@ void read_data(so_seg_t *segment, uintptr_t addr, int size)
 	DIE(pos < 0, "lseek failed");
 
 	while (size > 0) {
-		bytes_read = read(file_descriptor, (char *)(addr + index), size)
+		bytes_read = read(file_descriptor, (char *)(addr + index), size);
 		DIE(bytes_read < 0, "read failed");
 		size -= bytes_read;
 		index += bytes_read;
@@ -207,9 +209,9 @@ static void free_segments_memory()
 
 	for (i = 0; i < exec->segments_no; ++i) {
 		if (exec->segments[i].data) {
-			for (j = 0; j < exec->segments[i].data->nr_pages) {
-				if (exec->segments[i].data->pages[i].mapped) {
-					ret = munmap((void *)exec->segments[i].data->pages[i].addr, size);
+			for (j = 0; j < (*(seg_info_t *)exec->segments[i].data).nr_pages; ++j) {
+				if ((*(seg_info_t *)exec->segments[i].data).pages[i].mapped) {
+					ret = munmap((void *)(*(seg_info_t *)exec->segments[i].data).pages[i].addr, size);
 					DIE(ret < 0, "munmap failed");
 				}
 			}
