@@ -15,6 +15,7 @@
 #include <fcntl.h>
 /* TODO: Sa nu uit sa verific fisierele .h(loader.h, exec_parser.h) cu cele din repo-ul temei*/
 
+#include "loader.h"
 #include "exec_parser.h"
 #include "utils.h"
 
