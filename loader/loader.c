@@ -13,8 +13,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <math.h> /* va trebui sa leg la compilare biblioteca -lm */
-
 /* TODO: Sa nu uit sa verific fisierele .h(loader.h, exec_parser.h) cu cele din repo-ul temei*/
 
 #include "exec_parser.h"
@@ -71,16 +69,21 @@ static int get_segment_index(uintptr_t addr)
 /* zeroieste o zona de memorie de o anumita lungime */
 void zero_memory(so_seg_t *segment, uintptr_t addr, int size)
 {
-	uintptr_t addr_start = addr;
-	uintptr_t addr_helper = segment->vaddr + segment->file_size;
+	char *addr_start = (char *)addr;
+	char * addr_helper = (char *)segment->vaddr + segment->file_size;
 	int length = size;
+	
+	if ((char *)addr + size < addr_helper)
+		return;
 
-	if (addr < addr_helper)
-		addr_start += addr_helper - addr;
+	if (addr < (uintptr_t)addr_helper)
+		addr_start += addr_helper - (char *)addr;
 
-	addr_helper = segment->vaddr + segment->mem_size;
-	if (addr + size > addr_helper)
+	addr_helper = (char *)segment->vaddr + segment->mem_size;
+	if ((char *)addr + size > addr_helper)
 		length = addr_helper - addr_start;
+	else
+		length = ((char *)addr + size) - addr_start;
 
 	memset((void *)addr_start, 0, length);
 }
@@ -95,7 +98,7 @@ void read_data(so_seg_t *segment, uintptr_t addr, int size)
 	int index = 0;
 	unsigned int offset = segment->offset;
 	off_t pos;
-	void *start_addr = (void *)addr;
+	char *start_addr = (char *)addr;
 
 	if (addr + size > addr_helper)
 		size = addr_helper - addr;
@@ -105,12 +108,10 @@ void read_data(so_seg_t *segment, uintptr_t addr, int size)
 	DIE(pos < 0, "lseek failed");
 	
 	while (size > 0) {
-		bytes_read = read(file_descriptor, start_addr, size);
+		bytes_read = read(file_descriptor, start_addr + index, size);
 		DIE(bytes_read < 0, "read failed");
 		size -= bytes_read;
 		index += bytes_read;
-		printf("index after read = %d", index);
-		DIE(0 == 9, "Am iesit eu");
 	}
 }
 
@@ -121,7 +122,7 @@ static void sigsegv_sig_handler(int signum, siginfo_t *info, void *ucont)
 	int page_size, page_index;
 	uintptr_t page_addr;
 	void *ret;
-	int flags;
+	int flags, res;
 
 	if (signum != SIGSEGV)
 		return;
@@ -130,62 +131,47 @@ static void sigsegv_sig_handler(int signum, siginfo_t *info, void *ucont)
 
 	if (seg_index == INVALID_SEGMENT) {
 		sigsegv_sig_default_handler(SIGSEGV);
-		return; /* cred ca nu este necesara aceasta instructiune pentru ca default inseamna opreste programul */
+		return;
 	}
 
-	// /* obtinem dimensiunea unei pagini de memorie */
+	/* obtinem dimensiunea unei pagini de memorie */
 	page_size = getpagesize();
-	// /* eu va trebui sa calculez si adresa paginii(prima adresa din pagina)
-	//  * ma gandeam daca as putea sa retin pentru fiecare pagina prima adresa si starea paginii.
-	//  */
-	// /* adresa inceput = base + index_page * size_page*/
-	// /* aici de unde stiu eu ca data este NULL,
-	// va trebui sa initializez cu NULL in fisierul de parsare care creeza exec */
+
 	if (!exec->segments[seg_index].data) {
 		exec->segments[seg_index].data = calloc(1, sizeof(seg_info_t));
 		DIE(!exec->segments[seg_index].data, "calloc failed.");
-		nr_pages = (int)ceil(exec->segments[seg_index].mem_size * 1.0f / page_size);
+		nr_pages = ceil_(exec->segments[seg_index].mem_size * 1.0f / page_size * 1.0f);
 
 		(*(seg_info_t *)exec->segments[seg_index].data).nr_pages = nr_pages;
 		(*(seg_info_t *)exec->segments[seg_index].data).pages = (page_info_t *)calloc(nr_pages, sizeof(page_info_t));
 		DIE(!(*(seg_info_t *)exec->segments[seg_index].data).pages, "calloc failed.");
 	}
 
-	// /* calculam indexul paginii din cadrul segmentului identificat
-	//  * prin seg_index .
-	//  */
+	/* calculam indexul paginii din cadrul segmentului identificat
+	 * prin seg_index .
+	 */
 	page_index = ((uintptr_t)info->si_addr - exec->segments[seg_index].vaddr) / page_size;
 	if ((*(seg_info_t *)exec->segments[seg_index].data).pages[page_index].mapped) {
 		sigsegv_sig_default_handler(SIGSEGV);
-		return;  // cred ca nu este necesara aceasta instructiune pentru ca default inseamna opreste programul 
+		return;
 	}
 
-	// /* calculam adresa de inceput a paginii de memorie */
+	/* calculam adresa de inceput a paginii de memorie */
 	page_addr = exec->segments[seg_index].vaddr + page_index * page_size;
-	// /* salvam adresa paginii pentru a putea demapa ulterior pagina */
-	(*(seg_info_t *)exec->segments[seg_index].data).pages[page_index].addr = page_addr;
-	// /*
-	//  * 1. mapez la adresa calcultata memorie virtuala
-	//  * 2. zeroiesc memoria (daca page_add + size > file_size
-	//  	  de la file_size pana la page_adr+page_size)
-	//  * 3. citesc din fisier continutul paginii(deci identific in cadrul
-	//    segmentului din fisier pagina si citesc cate date am nevoie
-	//    pentru ultima pagina s-ar putea sa nu fie nevoie sa citesc o pagina intreaga
-	//    deci dimensiune citita = if page_add + pagesie < file_size citesc o pagina
-	//    							else citesc file_size - page_addr)
 
-	//  */
-	// /* TODO: use mmap to map a page into memory */
+	/* salvam adresa paginii pentru a putea demapa ulterior pagina */
+	(*(seg_info_t *)exec->segments[seg_index].data).pages[page_index].addr = page_addr;
+
 	flags = MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS;
-	/* TODO: La protectie avem o problema pentru ca eu daca aloc cu protectiile din segment
-	 * de exemplu este doar pentru citire si executie,
-	 * atunci eu nu o sa pot sa scriu in aceasta zona -> deci ce facem ?*/
-	ret = mmap((void *)page_addr, page_size, PROT_READ | PROT_WRITE | PROT_EXEC, flags, -1, 0); // exec->segments[seg_index].perm, flags, -1, 0);
+	ret = mmap((void *)page_addr, page_size, PROT_WRITE, flags, -1, 0);
 	DIE(ret == MAP_FAILED, "mmap failed.");
-	// /* TODO: call zero_memory() */
+	
 	zero_memory(&exec->segments[seg_index], page_addr, page_size);
-	// /* TODO: call read_data() */
+
 	read_data(&exec->segments[seg_index], page_addr, page_size);
+
+	res = mprotect((void *)page_addr, page_size, exec->segments[seg_index].perm);
+	DIE(res < 0, "mprotect failed");
 
 	(*(seg_info_t *)exec->segments[seg_index].data).pages[page_index].mapped = 1;
 }
@@ -204,11 +190,11 @@ static void record_sigsegv_sig_handler()
 	sigsegv_sig_default_handler = old_action.sa_handler;
 }
 
+/* demapeaza pagineile mapate si elibereaza memoria alocata pentru
+ * campul data din structura struct so_seg
+ */
 static void free_segments_memory()
 {
-	/* TODO: Va trebui sa demapez paginile mapate  si dupa sa eliberez 
-	 * memoria pentru vectorul data
-	 */
 	unsigned int i, j;
 	int ret;
 	int size = getpagesize();
@@ -221,12 +207,14 @@ static void free_segments_memory()
 					DIE(ret < 0, "munmap failed");
 				}
 			}
-
+			
+			free((void *)(*(seg_info_t *)exec->segments[i].data).pages);
 			free(exec->segments[i].data);
 		}
 	}
 }
 
+/* elibereaza resursele utilizate */
 static void free_memory()
 {
 	int ret = close(file_descriptor);
@@ -248,10 +236,9 @@ int so_execute(char *path, char *argv[])
 	if (!exec)
 		return -1;
 
-	/* TODO: va trebui sa deschid fisierul pentru citire din el */
 	file_descriptor = open(path, O_RDONLY);
 	DIE(file_descriptor < 0, "open failed.");
-
+	
 	so_start_exec(exec, argv);
 
 	free_memory();
