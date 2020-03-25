@@ -20,16 +20,6 @@
 
 #define INVALID_SEGMENT	-1
 
-typedef struct _page_info {
-	uintptr_t addr;
-	uint8_t mapped;
-} page_info_t;
-
-typedef struct _seg_info {
-	int nr_pages;
-	page_info_t *pages;
-} seg_info_t;
-
 static so_exec_t *exec;
 
 /* va retine default handler-ul semnalului SIGSEGV */
@@ -138,29 +128,23 @@ static void sigsegv_sig_handler(int signum, siginfo_t *info, void *ucont)
 	page_size = getpagesize();
 
 	if (!exec->segments[seg_index].data) {
-		exec->segments[seg_index].data = calloc(1, sizeof(seg_info_t));
-		DIE(!exec->segments[seg_index].data, "calloc failed.");
 		nr_pages = ceil_(exec->segments[seg_index].mem_size * 1.0f / page_size * 1.0f);
 
-		(*(seg_info_t *)exec->segments[seg_index].data).nr_pages = nr_pages;
-		(*(seg_info_t *)exec->segments[seg_index].data).pages = (page_info_t *)calloc(nr_pages, sizeof(page_info_t));
-		DIE(!(*(seg_info_t *)exec->segments[seg_index].data).pages, "calloc failed.");
+		exec->segments[seg_index].data = calloc(nr_pages, sizeof(uint8_t));
+		DIE(!exec->segments[seg_index].data, "calloc failed.");
 	}
 
 	/* calculam indexul paginii din cadrul segmentului identificat
 	 * prin seg_index .
 	 */
 	page_index = ((uintptr_t)info->si_addr - exec->segments[seg_index].vaddr) / page_size;
-	if ((*(seg_info_t *)exec->segments[seg_index].data).pages[page_index].mapped) {
+	if (*((uint8_t *)exec->segments[seg_index].data + page_index)) {
 		sigsegv_sig_default_handler(SIGSEGV);
 		return;
 	}
 
 	/* calculam adresa de inceput a paginii de memorie */
 	page_addr = exec->segments[seg_index].vaddr + page_index * page_size;
-
-	/* salvam adresa paginii pentru a putea demapa ulterior pagina */
-	(*(seg_info_t *)exec->segments[seg_index].data).pages[page_index].addr = page_addr;
 
 	flags = MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS;
 	ret = mmap((void *)page_addr, page_size, PROT_WRITE, flags, -1, 0);
@@ -173,7 +157,7 @@ static void sigsegv_sig_handler(int signum, siginfo_t *info, void *ucont)
 	res = mprotect((void *)page_addr, page_size, exec->segments[seg_index].perm);
 	DIE(res < 0, "mprotect failed");
 
-	(*(seg_info_t *)exec->segments[seg_index].data).pages[page_index].mapped = 1;
+	*((uint8_t *)exec->segments[seg_index].data + page_index) = 1;
 }
 
 static void record_sigsegv_sig_handler()
@@ -188,39 +172,6 @@ static void record_sigsegv_sig_handler()
 	ret = sigaction(SIGSEGV, &action, &old_action);
 	DIE(ret == -1, "sigaction failed.");
 	sigsegv_sig_default_handler = old_action.sa_handler;
-}
-
-/* demapeaza pagineile mapate si elibereaza memoria alocata pentru
- * campul data din structura struct so_seg
- */
-static void free_segments_memory()
-{
-	unsigned int i, j;
-	int ret;
-	int size = getpagesize();
-
-	for (i = 0; i < exec->segments_no; ++i) {
-		if (exec->segments[i].data) {
-			for (j = 0; j < (*(seg_info_t *)exec->segments[i].data).nr_pages; ++j) {
-				if ((*(seg_info_t *)exec->segments[i].data).pages[i].mapped) {
-					ret = munmap((void *)(*(seg_info_t *)exec->segments[i].data).pages[i].addr, size);
-					DIE(ret < 0, "munmap failed");
-				}
-			}
-			
-			free((void *)(*(seg_info_t *)exec->segments[i].data).pages);
-			free(exec->segments[i].data);
-		}
-	}
-}
-
-/* elibereaza resursele utilizate */
-static void free_memory()
-{
-	int ret = close(file_descriptor);
-	DIE(ret < 0, "close failed.");
-
-	free_segments_memory();
 }
 
 int so_init_loader(void)
@@ -240,8 +191,6 @@ int so_execute(char *path, char *argv[])
 	DIE(file_descriptor < 0, "open failed.");
 	
 	so_start_exec(exec, argv);
-
-	free_memory();
 
 	return -1;
 }
