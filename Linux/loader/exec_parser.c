@@ -196,9 +196,7 @@ so_exec_t *so_parse_exec(char *path)
 			seg->file_size = phdr[i].p_filesz + diff;
 			seg->mem_size = phdr[i].p_memsz + diff;
 			seg->perm = 0;
-			/* ============ */
 			seg->data = NULL;
-			/* ============ */
 
 			if (phdr[i].p_flags & PF_X)
 				seg->perm |= PERM_X;

@@ -13,7 +13,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-/* TODO: Sa nu uit sa verific fisierele .h(loader.h, exec_parser.h) cu cele din repo-ul temei*/
 
 #include "loader.h"
 #include "exec_parser.h"
@@ -29,7 +28,8 @@ static void (*sigsegv_sig_default_handler)(int);
 /* file descriptor-ul care identifica instanta de fisier deschisa */
 static int file_descriptor;
 
-/* intoarce index-ul segmentului din care face parte addr sau
+/*
+ * Intoarce index-ul segmentului din care face parte addr sau
  * INVALID_SEGMENT daca adresa nu se gaseste in nici-un segment
  */
 static int get_segment_index(uintptr_t addr)
@@ -40,12 +40,12 @@ static int get_segment_index(uintptr_t addr)
 	end = exec->segments_no - 1;
 
 	while (start <= end) {
-		if (addr >= exec->segments[start].vaddr && 
+		if (addr >= exec->segments[start].vaddr &&
 			addr < (exec->segments[start].vaddr
 			+ exec->segments[start].mem_size))
 			return start;
 
-		if (addr >= exec->segments[end].vaddr && 
+		if (addr >= exec->segments[end].vaddr &&
 			addr < (exec->segments[end].vaddr
 			+ exec->segments[end].mem_size))
 			return end;
@@ -57,13 +57,13 @@ static int get_segment_index(uintptr_t addr)
 	return INVALID_SEGMENT;
 }
 
-/* zeroieste o zona de memorie de o anumita lungime */
+/* Zeroieste o zona de memorie de o anumita lungime */
 void zero_memory(so_seg_t *segment, uintptr_t addr, int size)
 {
 	char *addr_start = (char *)addr;
-	char * addr_helper = (char *)segment->vaddr + segment->file_size;
+	char *addr_helper = (char *)segment->vaddr + segment->file_size;
 	int length = size;
-	
+
 	if ((char *)addr + size < addr_helper)
 		return;
 
@@ -79,8 +79,9 @@ void zero_memory(so_seg_t *segment, uintptr_t addr, int size)
 	memset((void *)addr_start, 0, length);
 }
 
-/* citeste un numar de bytes din fiserul executabil
- * si ii salveaza la dresa addr
+/*
+ * citeste un numar de bytes din fiserul executabil
+ * si ii salveaza la adresa addr
  */
 void read_data(so_seg_t *segment, uintptr_t addr, int size)
 {
@@ -91,13 +92,16 @@ void read_data(so_seg_t *segment, uintptr_t addr, int size)
 	off_t pos;
 	char *start_addr = (char *)addr;
 
-	if (addr + size > addr_helper)
+	if (addr + size > addr_helper) {
 		size = addr_helper - addr;
+		if (size < 0)
+			return;
+	}
 
 	offset += addr - segment->vaddr;
 	pos = lseek(file_descriptor, offset, SEEK_SET);
 	DIE(pos < 0, "lseek failed");
-	
+
 	while (size > 0) {
 		bytes_read = read(file_descriptor, start_addr + index, size);
 		DIE(bytes_read < 0, "read failed");
@@ -106,7 +110,11 @@ void read_data(so_seg_t *segment, uintptr_t addr, int size)
 	}
 }
 
-/* descrie implementarea handler-ului pentru semnalul SIGSEGV cand are loc un page fault */
+/*
+ * descrie implementarea handler-ului pentru semnalul SIGSEGV
+ * cand are loc un page fault(pagina nu a fost alocata sau nu are
+ * permisiunile corespunzatoare)
+ */
 static void sigsegv_sig_handler(int signum, siginfo_t *info, void *ucont)
 {
 	int seg_index, nr_pages;
@@ -118,6 +126,10 @@ static void sigsegv_sig_handler(int signum, siginfo_t *info, void *ucont)
 	if (signum != SIGSEGV)
 		return;
 
+	/*
+	 * obtinem indexul segmentului din care face parte pagina care contine
+	 * adresa care a cauzat page fault-ul
+	 */
 	seg_index = get_segment_index((uintptr_t)info->si_addr);
 
 	if (seg_index == INVALID_SEGMENT) {
@@ -129,16 +141,27 @@ static void sigsegv_sig_handler(int signum, siginfo_t *info, void *ucont)
 	page_size = getpagesize();
 
 	if (!exec->segments[seg_index].data) {
-		nr_pages = ceil_(exec->segments[seg_index].mem_size * 1.0f / page_size * 1.0f);
+		/* calculam numarul de pagini din segment */
+		nr_pages = ceil_(exec->segments[seg_index].mem_size * 1.0f
+						/ page_size * 1.0f);
 
-		exec->segments[seg_index].data = calloc(nr_pages, sizeof(uint8_t));
+		/* marcam initial toate paginile ca fiind nemapate */
+		exec->segments[seg_index].data = calloc(nr_pages,
+							sizeof(uint8_t));
+
 		DIE(!exec->segments[seg_index].data, "calloc failed.");
 	}
 
-	/* calculam indexul paginii din cadrul segmentului identificat
+	/*
+	 * calculam indexul paginii din cadrul segmentului identificat
 	 * prin seg_index .
 	 */
-	page_index = ((uintptr_t)info->si_addr - exec->segments[seg_index].vaddr) / page_size;
+	page_index = ((uintptr_t)info->si_addr
+			- exec->segments[seg_index].vaddr) / page_size;
+	/*
+	 * daca pagina este deja mapata, inseamna ca page fault-ul a fost
+	 * generat din cauza faptului ca pagina nu are permisiunile necesare
+	 */
 	if (*((uint8_t *)exec->segments[seg_index].data + page_index)) {
 		sigsegv_sig_default_handler(SIGSEGV);
 		return;
@@ -148,20 +171,33 @@ static void sigsegv_sig_handler(int signum, siginfo_t *info, void *ucont)
 	page_addr = exec->segments[seg_index].vaddr + page_index * page_size;
 
 	flags = MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS;
+	/* alocam memorie */
 	ret = mmap((void *)page_addr, page_size, PROT_WRITE, flags, -1, 0);
 	DIE(ret == MAP_FAILED, "mmap failed.");
-	
+
+	/*
+	 * zeroim(daca este necesar-pagina sa fie in zona .bss)
+	 * zona de memorie
+	 */
 	zero_memory(&exec->segments[seg_index], page_addr, page_size);
 
+	/* citim datele paginii din fisierul executabil */
 	read_data(&exec->segments[seg_index], page_addr, page_size);
 
-	res = mprotect((void *)page_addr, page_size, exec->segments[seg_index].perm);
+	/*
+	 * schimbam permisiunile paginii(pagina trebuie sa aiba aceleasi
+	 * permisiunii ca segmentul din care face parte)
+	 */
+	res = mprotect((void *)page_addr, page_size,
+				exec->segments[seg_index].perm);
 	DIE(res < 0, "mprotect failed");
 
+	/* marcam in vectorul data ca pagina a fost mapata */
 	*((uint8_t *)exec->segments[seg_index].data + page_index) = 1;
 }
 
-static void record_sigsegv_sig_handler()
+/* inregistreaza handler-ul */
+static void record_sigsegv_sig_handler(void)
 {
 	struct sigaction action, old_action;
 	int ret;
@@ -176,7 +212,7 @@ static void record_sigsegv_sig_handler()
 }
 
 int so_init_loader(void)
-{	
+{
 	record_sigsegv_sig_handler();
 
 	return -1;
@@ -188,9 +224,13 @@ int so_execute(char *path, char *argv[])
 	if (!exec)
 		return -1;
 
+	/*
+	 * deschidem fisierul executabil pentru a putea citi ulterior
+	 * datele paginilor din el
+	 */
 	file_descriptor = open(path, O_RDONLY);
 	DIE(file_descriptor < 0, "open failed.");
-	
+
 	so_start_exec(exec, argv);
 
 	return -1;
