@@ -10,7 +10,7 @@
 
 #include "exec_parser.h"
 
-static BOOL SolveImports(uintptr_t loadBase, IMAGE_NT_HEADERS * peHdr);
+static BOOL SolveImports(uintptr_t loadBase, IMAGE_NT_HEADERS *peHdr);
 
 static int readHeader(HANDLE hFile, DWORD offset, char *buf, DWORD size)
 {
@@ -19,7 +19,8 @@ static int readHeader(HANDLE hFile, DWORD offset, char *buf, DWORD size)
 
 	if (SetFilePointer(hFile, offset, NULL, FILE_BEGIN) ==
 			INVALID_SET_FILE_POINTER) {
-		fprintf(stderr, "Couldn't change offset: %d\n", GetLastError());
+		fprintf(stderr, "Couldn't change offset: %d\n",
+						GetLastError());
 		goto error;
 	}
 
