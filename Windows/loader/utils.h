@@ -17,8 +17,9 @@
 
 #define ERR_AP	0.0000000001f
 
-/* echivalentul functie ceil din linraria math.h */
-static int ceil_(float x) {
+/* echivalentul functie ceil din libraria math.h */
+static int ceil_(float x)
+{
 	int x_int = (int)x;
 
 	if (x - x_int < ERR_AP)
