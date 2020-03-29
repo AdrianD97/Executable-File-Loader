@@ -152,7 +152,8 @@ static LONG CALLBACK sigsegv_sig_handler(PEXCEPTION_POINTERS except_info)
 						/ PAGE_SIZE * 1.0f);
 
 		/* marcam initial toate paginile ca fiind nemapate */
-		exec->segments[seg_index].data = calloc(nr_pages, sizeof(uint8_t));
+		exec->segments[seg_index].data = calloc(nr_pages,
+							sizeof(uint8_t));
 		DIE(!exec->segments[seg_index].data, "calloc failed.");
 	}
 

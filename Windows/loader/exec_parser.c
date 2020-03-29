@@ -10,7 +10,7 @@
 
 #include "exec_parser.h"
 
-static BOOL SolveImports(uintptr_t loadBase, IMAGE_NT_HEADERS *peHdr);
+static BOOL SolveImports(uintptr_t loadBase, IMAGE_NT_HEADERS * peHdr);
 
 static int readHeader(HANDLE hFile, DWORD offset, char *buf, DWORD size)
 {
