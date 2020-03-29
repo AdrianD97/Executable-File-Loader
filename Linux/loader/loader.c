@@ -23,7 +23,7 @@
 static so_exec_t *exec;
 
 /* va retine default handler-ul semnalului SIGSEGV */
-static void (*sigsegv_sig_default_handler)(int);
+static void (*sigsegv_sig_default_handler)(int, siginfo_t *, void *);
 
 /* file descriptor-ul care identifica instanta de fisier deschisa */
 static int file_descriptor;
@@ -133,7 +133,7 @@ static void sigsegv_sig_handler(int signum, siginfo_t *info, void *ucont)
 	seg_index = get_segment_index((uintptr_t)info->si_addr);
 
 	if (seg_index == INVALID_SEGMENT) {
-		sigsegv_sig_default_handler(SIGSEGV);
+		sigsegv_sig_default_handler(signum, info, ucont);
 		return;
 	}
 
@@ -163,7 +163,7 @@ static void sigsegv_sig_handler(int signum, siginfo_t *info, void *ucont)
 	 * generat din cauza faptului ca pagina nu are permisiunile necesare
 	 */
 	if (*((uint8_t *)exec->segments[seg_index].data + page_index)) {
-		sigsegv_sig_default_handler(SIGSEGV);
+		sigsegv_sig_default_handler(signum, info, ucont);
 		return;
 	}
 
@@ -208,7 +208,7 @@ static void record_sigsegv_sig_handler(void)
 	action.sa_sigaction = sigsegv_sig_handler;
 	ret = sigaction(SIGSEGV, &action, &old_action);
 	DIE(ret == -1, "sigaction failed.");
-	sigsegv_sig_default_handler = old_action.sa_handler;
+	sigsegv_sig_default_handler = old_action.sa_sigaction;
 }
 
 int so_init_loader(void)
