@@ -9,7 +9,7 @@ sau nu are permisiunile necesare). Asadar, voi descrie implementarea handler-ulu
 Handler-ul este inregistrat de functia record_sigsegv_sig_handler(...) care este apelata in momentul
 initializarii loader-ului. Ideea pe care m-am bazat in implementarea handler-ului a fost sa retin in
 vectorul data(asociat fiecarui segment) starea fiecarei pagini(mapata sau nemapata).
-Pentru fiecare execptie, determin segmentul din care face parte pagina care contine adresa care
+Pentru fiecare exceptie, determin segmentul din care face parte pagina care contine adresa care
 a generat-o. In cazul in care pagina nu face parte din nici-un segment, se incearca transferarea
 exceptiei pentru a fi tratata de catre un alt handler.
 Initial(pana cand se primea prima exceptie pentru un segment(prima pagina din segment pentru care
@@ -23,7 +23,8 @@ atunci aloc memorie pentru pagina si citesc datele paginii din fisier (daca pagi
 Dupa citirea datelor, pagina este marcata ca fiind mapata si semnalizam ca exceptia a fost tratata si
 se poate continua executia.
 
-Sa nu uit sa mentionez: foarte interesanta tema.
+Sa nu uit sa mentionez: foarte interesanta tema. De asemenea, trebuie sa mentionez ca documentatia nu tocmai
+prietenoasa a apelurilor de sistem pentru Windows a reprezentat un factor important in cresterea dificultatii temei.
 
 Compilare:
 	nmake -> compileaza biblioteca dinamica so_loader.dll
