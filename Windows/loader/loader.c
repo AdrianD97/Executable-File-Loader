@@ -128,6 +128,7 @@ static LONG CALLBACK sigsegv_sig_handler(PEXCEPTION_POINTERS except_info)
 	DWORD flags;
 	BOOL res;
 	DWORD old_prot;
+	EXCEPTION_RECORD *exc_rec;
 
 	if (except_info->ExceptionRecord->ExceptionCode
 		!= EXCEPTION_ACCESS_VIOLATION
@@ -135,7 +136,8 @@ static LONG CALLBACK sigsegv_sig_handler(PEXCEPTION_POINTERS except_info)
 		!= EXCEPTION_DATATYPE_MISALIGNMENT)
 		return EXCEPTION_CONTINUE_SEARCH;
 
-	addr = (uintptr_t)except_info->ExceptionRecord->ExceptionInformation[1];
+	exc_rec = except_info->ExceptionRecord;
+	addr = (uintptr_t)exc_rec->ExceptionInformation[1];
 
 	/*
 	 * obtinem indexul segmentului din care face parte pagina care contine
@@ -162,14 +164,15 @@ static LONG CALLBACK sigsegv_sig_handler(PEXCEPTION_POINTERS except_info)
 	 */
 	page_index = (addr - exec->segments[seg_index].vaddr) / PAGE_SIZE;
 	if (*((uint8_t *)exec->segments[seg_index].data + page_index))
-		return EXCEPTION_EXECUTE_HANDLER;
+		return EXCEPTION_CONTINUE_SEARCH;
 
 	/* calculam adresa de inceput a paginii de memorie */
 	page_addr = exec->segments[seg_index].vaddr + page_index * PAGE_SIZE;
 
 	flags = MEM_COMMIT | MEM_RESERVE;
 	/* alocam memorie */
-	ret = VirtualAlloc((LPVOID)page_addr, PAGE_SIZE, flags, PAGE_READWRITE);
+	ret = VirtualAlloc((LPVOID)page_addr, PAGE_SIZE,
+						flags, PAGE_READWRITE);
 	DIE(ret == NULL, "VirtualAlloc failed.");
 
 	/* citim datele paginii din fisierul executabil */
